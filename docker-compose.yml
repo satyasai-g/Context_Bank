@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: context_bank_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: context_bank
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: context_bank_backend
+    restart: unless-stopped
+    command: >
+      sh -c "python scripts/init_db.py &&
+             uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@postgres:5432/context_bank
+      - SECRET_KEY=b91a7834e9e0487595db23668a1d7f1d48c0356e7e4362145e14c1962dc213e4
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - EMBEDDING_PROVIDER=tfidf
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: .
+    container_name: context_bank_frontend
+    restart: unless-stopped
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
